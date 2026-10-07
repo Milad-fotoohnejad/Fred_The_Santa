@@ -1,0 +1,3 @@
+# Local-only identity provided by the portable Sites development simulator.
+ADMIN_USER_IDS="local_seedy"
+ALLOW_PRIVATE_PREVIEW_ADMIN="false"
