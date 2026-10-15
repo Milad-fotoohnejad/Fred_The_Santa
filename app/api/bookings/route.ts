@@ -1,9 +1,11 @@
+import { bookingsConfigured } from '@/lib/config';
 import { bookingSchema } from '@/lib/validation';
 import { today } from '@/lib/content';
 import { json,sameOrigin } from '@/lib/server';
 import { getDb } from '@/db';
 import { bookings } from '@/db/schema';
 export async function POST(request:Request){
+ if(!bookingsConfigured())return json({error:'Booking requests are not open yet.'},503);
  if(!sameOrigin(request))return json({error:'Please submit from this website.'},403);
  if(Number(request.headers.get('content-length')||0)>12000)return json({error:'Request is too large.'},413);
  let body;try{const raw=await request.text();if(raw.length>12000)return json({error:'Request is too large.'},413);body=JSON.parse(raw);}catch{return json({error:'Invalid request.'},400);}

@@ -1,219 +1,209 @@
 # Fred the Santa
 
-A responsive Christmas booking website for Fred Berg. Built with React 19, TypeScript, Vinext, Cloudflare Workers, D1 (Drizzle), and R2. The hosted review site is owner-private and uses clearly labelled sample content. The GitHub source repository is public.
+A Christmas website for Fred Berg, built with **standard Next.js App Router, React, and TypeScript**, ready to import into Vercel using the **Next.js preset**.
 
-- **Repository:** https://github.com/Milad-fotoohnejad/Fred_The_Santa
-- **Hosted review site:** https://fred-the-santa.milad-f.chatgpt.site
-- **Management area:** `/manage`
+- Repository: https://github.com/Milad-fotoohnejad/Fred_The_Santa
+- Runtime: Node.js 24
+- Database: Neon Postgres with Drizzle ORM
+- Image uploads: public Vercel Blob store
+- Administrator authentication: Clerk, with an explicit user-ID allowlist
 
-The site and this repository are separate: cloning the code does not copy hosted booking records, uploaded images, authentication sessions, or runtime secrets.
+The visual design, reusable sample Santa image, weekly calendar, gallery, booking request flow, and management UI are retained. The original Vinext / Cloudflare D1 / R2 / Sites authentication runtime has been replaced.
 
-## Contents
+## Current readiness
 
-- [Features](#features)
-- [Local development](#local-development)
-- [Content and images](#content-and-images)
-- [Architecture](#architecture)
-- [Runtime configuration](#runtime-configuration)
-- [Data and request lifecycle](#data-and-request-lifecycle)
-- [Before making the Site public](#before-making-the-site-public)
-- [GitHub and deployment workflow](#github-and-deployment-workflow)
-- [Troubleshooting](#troubleshooting)
-- [Verification for this release](#verification-for-this-release)
-- [Next development milestones](#next-development-milestones)
-- [Image provenance](#image-provenance)
+The website can build and deploy **without service credentials**. In this initial state it displays sample content, shows “Booking requests open soon,” and denies management API access. It never pretends an unsaved request was accepted.
 
-## Features
+Database-backed requests, content editing, photo uploads, and administrator sign-in require the service connections described below. These external accounts/resources are not created by cloning or building this repository.
 
-- Festive responsive home page, visit types, introduction, and FAQs.
-- Weekly public appearance timetable, previous/next navigation, and directions for real entries.
-- Filterable gallery with native accessible modal photo viewing.
-- Booking requests stored in D1 with server-side validation and explicit pending status.
-- Protected `/manage` workshop: review/approve/decline/delete requests, edit the public schedule, upload photos, change captions and categories, and replace the main portrait.
-- No email notifications, payments, automatic reservations, or automated conflict prevention in this release. Approval is a manual administrative status; arrange details directly with guests first.
+Email/SMS notifications, payments, automatic availability, and conflict prevention are not implemented. Booking approval is a manual status change; Fred must arrange the visit with the guest separately.
 
-## Local development
+## Import into Vercel
 
-Use Node.js 22.13 or newer and pnpm 11.25 (the pinned package manager in `package.json`). After cloning or extracting:
+1. Create a Vercel project and import `Milad-fotoohnejad/Fred_The_Santa`.
+2. Select **Next.js** as the framework preset.
+3. Use the repository root (`./`) as the Root Directory.
+4. Use Node.js **24.x**. The project declares this in `package.json` and `.nvmrc`.
+5. Use `pnpm install --frozen-lockfile` as Install Command and `pnpm build` as Build Command. These are also declared in `vercel.json`.
+6. Leave Output Directory at the Next.js default; do not use `dist` or configure a static export.
+7. The first deployment may have no environment variables. It will display the sample website with bookings closed.
+
+Connect the services in the next section to activate the backend. This repository does not automatically provision paid resources or run schema migrations during builds.
+
+After connecting the repository in Vercel, pushes to its configured production branch can deploy through Vercel's Git integration. The old ChatGPT Sites preview is a separate deployment and is not updated by this migration.
+
+## Connect the backend
+
+### 1. Neon Postgres
+
+Connect a Neon database through the Vercel Marketplace / Storage settings and make its `DATABASE_URL` available to the appropriate Vercel environments. Use a separate development/preview database or Neon branch when testing; local tests against a production connection affect production records.
+
+For local use, put that connection string in `.env.local`. If using the Vercel CLI with the correct project already linked, `vercel env pull .env.local` can retrieve the development environment values. Do not commit this file.
+
+Apply the initial Postgres migration explicitly:
 
 ```sh
-git clone https://github.com/Milad-fotoohnejad/Fred_The_Santa.git
-cd Fred_The_Santa
-corepack enable
+pnpm db:migrate
+```
+
+The script loads `.env.local` through Next's environment loader. Drizzle records applied migrations, so subsequent successful runs skip those migrations. Do not edit an already applied migration. If a migration fails partway, inspect the database and migration state before retrying.
+
+### 2. Clerk administrator authentication
+
+Connect Clerk and configure these environment variables:
+
+```dotenv
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_publishable_key
+CLERK_SECRET_KEY=your_secret_key
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=/manage
+ADMIN_USER_IDS=user_your_clerk_user_id
+```
+
+Create or invite the intended administrator in Clerk. Obtain the user's `user_...` ID from the Clerk dashboard, or sign in and visit `/manage`: unauthorized signed-in users see their own ID. Add Fred's and/or your IDs to `ADMIN_USER_IDS`, separated by commas, and redeploy after changing hosted environment variables.
+
+Use the Clerk instance and domain configuration appropriate to the deployment; use production keys for the final public production app. Do not paste secret keys into chat, source code, or `NEXT_PUBLIC_` variables.
+
+Signing in does **not** grant administration by itself. Every management read/write and upload checks the allowlist server-side. No ChatGPT authentication headers are trusted, and the old `ALLOW_PRIVATE_PREVIEW_ADMIN` switch is no longer supported. Local development uses Clerk too; there is no mock-admin bypass.
+
+### 3. Vercel Blob
+
+Create a **public** Blob store and connect it to the project. A public store is appropriate for this public gallery; never upload confidential photos or booking records into it.
+
+The SDK supports a connected store's hosted OIDC credentials (`BLOB_STORE_ID` and `VERCEL_OIDC_TOKEN`) or `BLOB_READ_WRITE_TOKEN`. For ordinary local development, use the read/write token in `.env.local`.
+
+The management page accepts JPG, PNG, and WebP images up to **3 MiB**. This keeps the server upload below the Vercel Function request-body limit, including multipart overhead. Larger images should be resized before upload; direct browser uploads are not part of this release.
+
+Uploads are checked by file signature and saved with generated filenames. After uploading, click **Save changes** to update the visible website. Removing a gallery entry removes its reference but does not automatically delete the stored Blob; manage unused uploads separately in the Blob dashboard.
+
+### 4. Enable requests deliberately
+
+Once the database migration is applied, Clerk is configured, and at least one administrator is allowed:
+
+```dotenv
+BOOKINGS_ENABLED=true
+```
+
+Redeploy. The request form appears only when the flag and backend/admin configuration are present and the content database is readable. If the database cannot be read, the public page falls back to sample content and closes the form.
+
+Before enabling this flag for real customers, finalize Fred's contact details, service area, timezone, photos, public appearances, privacy/retention policy, and a process for reviewing requests. Add public-form rate limiting or bot protection appropriate to expected traffic; this release includes input validation and a honeypot, not a complete anti-abuse system.
+
+## Run locally
+
+If you cloned the original Cloudflare version, first commit or stash your own changes, then pull this migration. Existing `.wrangler` data is not used or deleted. The old `.dev.vars` file is not used; the new runtime reads `.env.local`.
+
+```sh
+git pull --ff-only
+nvm install
+nvm use
+npm install -g pnpm@11.25.0
 pnpm install --frozen-lockfile
-cp .dev.vars.example .dev.vars
-pnpm build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_large_wendell_rand.sql
+cp -n .env.example .env.local
 pnpm dev
 ```
 
-If `corepack` is unavailable, install the pinned pnpm version with `npm install --global pnpm@11.25.0`, then continue with `pnpm install --frozen-lockfile`. Do not run `npm install` for project dependencies: this project uses `pnpm-lock.yaml`.
+Open http://localhost:3000. Leave the terminal running. Stop with Ctrl+C.
 
-On Windows PowerShell, replace `cp .dev.vars.example .dev.vars` with `Copy-Item .dev.vars.example .dev.vars`.
+If nvm is not installed, install Node.js 24 using your preferred Node manager, then continue with pnpm. On Windows, copy `.env.example` to `.env.local` using File Explorer or PowerShell rather than the `cp` command.
 
-Open `http://localhost:5173`. The migration command runs only once per fresh local database. Generated state is under `.wrangler/` and is not committed. The local database and uploaded photos are separate from hosted data.
+No database is necessary to preview the sample public pages. To test saving requests or managing content, configure `.env.local`, run `pnpm db:migrate`, and restart the development server. Visit `/sign-in`, then `/manage` for administration.
 
-The portable starter simulates ChatGPT identity on loopback only. Open `/signin-with-chatgpt?return_to=/manage` to use the local identity `local_seedy`. `.dev.vars.example` authorizes only that local identity. Production authentication is handled by Sites; the local identity simulator is excluded from production builds.
-
-```sh
-pnpm typecheck
-pnpm build
-```
-
-### Useful commands
+### Commands
 
 | Command | Purpose |
 |---|---|
-| `pnpm dev` | Start the local development server with hot reload |
-| `pnpm typecheck` | Check TypeScript types without emitting files |
-| `pnpm build` | Build the Cloudflare Worker and browser assets |
-| `pnpm start` | Run the built Worker locally through Wrangler; does not simulate ChatGPT sign-in |
-| `pnpm db:generate` | Generate a new migration after editing `db/schema.ts` |
-| `pnpm lint` | Run the included ESLint configuration; not a completed verification gate for this release |
+| `pnpm dev` | Next.js development server with hot reload, port 3000 |
+| `pnpm build` | Standard Next.js production build |
+| `pnpm start` | Serve the completed production build locally |
+| `pnpm typecheck` | TypeScript checks |
+| `pnpm test` | Configuration, authorization policy, validation, upload-signature, calendar, and migration checks |
+| `pnpm db:generate` | Generate Postgres migrations after editing `db/schema.ts` |
+| `pnpm db:migrate` | Apply pending migrations to the configured Neon database |
 
-Use `pnpm install --frozen-lockfile` directly for a normal clone. The `install:ci` script is a managed Linux authoring helper and is not the portable installation command.
+Do not run the old Wrangler database command or use the old port 5173 instructions.
+
+## Environment reference
+
+Copy `.env.example` to `.env.local` for local work. Add hosted values in the Vercel project environment settings and redeploy when they change.
+
+| Variable | Purpose | Required for |
+|---|---|---|
+| `DATABASE_URL` | Neon Postgres connection string | Requests and editable content |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk client identifier | Admin sign-in |
+| `CLERK_SECRET_KEY` | Clerk server credential | Server identity verification |
+| `ADMIN_USER_IDS` | Comma-separated Clerk user IDs | Admin authorization |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/sign-in` | Clerk routing |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL` | `/manage` | Post-sign-in destination |
+| `BLOB_READ_WRITE_TOKEN` | Blob read/write credential | Uploads, unless hosted OIDC is configured |
+| `BLOB_STORE_ID`, `VERCEL_OIDC_TOKEN` | Connected hosted Blob credentials | Alternative hosted upload authentication |
+| `BOOKINGS_ENABLED` | Defaults to false; set exactly `true` | Opening the booking form |
+
+Only the Clerk publishable key and routing URLs are intentionally public. Keep credentials and connection strings out of Git. The example file contains no working secrets.
 
 ## Content and images
 
-- Initial content: `lib/content.ts`. Changes in the workshop override this default through D1.
-- Shared image: `public/images/santa-placeholder.webp` (AI-generated generic Santa; not a photo of Fred).
-- The hero and Meet Fred portrait share `heroImage`. Gallery slots are independently replaceable.
-- Upload photos from `/manage` → Photos, then click Save changes. Uploading alone does not update the visible gallery.
-- All displayed times use America/Vancouver (Pacific), a provisional default. Update `TIMEZONE` in `lib/content.ts` and the visible Pacific labels together if Fred works elsewhere.
-- Sample public appearances use December 18–20, 2026 and are visibly marked Sample. They are not real events.
+- Initial content is in `lib/content.ts`; saved workshop content overrides those defaults.
+- One AI-generated generic Santa photo is reused at `public/images/santa-placeholder.webp`. It is not a photograph of Fred.
+- The main portrait is shared by the hero and Meet Fred sections. Gallery entries can be replaced individually.
+- Public sample appearances are December 18–20, 2026 and are marked Sample. They are not real events.
+- Times use `America/Vancouver` (Pacific) provisionally. Change `TIMEZONE` and the visible Pacific labels together if Fred operates elsewhere.
+- Image paths are restricted to local `/images/` files or HTTPS public Vercel Blob URLs.
 
-## Architecture
+## Architecture and data
 
 | Path | Responsibility |
 |---|---|
-| `app/components/Home.tsx` | Public experience, calendar, gallery |
-| `app/components/BookingForm.tsx` | Request form and saved receipt |
-| `app/components/Workshop.tsx` | Management controls |
-| `app/api/bookings` | Validated request submission |
-| `app/api/admin` | Protected request and content operations |
-| `app/api/photos` | Protected upload and public image reads |
-| `lib/validation.ts` | Shared input and content schemas |
-| `lib/server.ts` | Server-only identity and persistence helpers |
-| `db/schema.ts`, `drizzle/` | Database schema and migrations |
-| `.openai/hosting.json` | Sites identity and storage bindings |
+| `app/components/Home.tsx` | Public design, calendar, gallery |
+| `app/components/BookingForm.tsx` | Closed/open booking state and request receipt |
+| `app/components/Workshop.tsx` | Request, appearance, and photo management |
+| `app/manage`, `app/sign-in` | Admin sign-in and access-controlled UI |
+| `proxy.ts` | Clerk session integration for Next.js |
+| `lib/config.ts`, `lib/server.ts` | Configuration, allowlist checks, and content access |
+| `db/index.ts`, `db/schema.ts` | Lazy Neon connection and Postgres schema |
+| `drizzle/`, `scripts/migrate.mjs` | Schema migrations and explicit migration runner |
+| `vercel.json` | Next.js import/build settings |
 
-No secrets are checked into the source. Keep `.dev.vars`, `.env*`, database state, and uploads out of Git. Hosted runtime variables must be configured in Sites.
-
-## Runtime configuration
-
-| Name | Local value | Hosted purpose |
+| Endpoint | Method | Behaviour |
 |---|---|---|
-| `ADMIN_USER_IDS` | `local_seedy` in `.dev.vars.example` | Comma-separated Site-specific authenticated user IDs allowed to manage the website |
-| `ALLOW_PRIVATE_PREVIEW_ADMIN` | `false` | Temporary permission for authenticated users inside the confirmed owner-private Site; must be off before public sharing |
-| `DB` | Simulated by the local Cloudflare runtime | D1 binding for booking and content records |
-| `BUCKET` | Simulated by the local Cloudflare runtime | R2 binding for uploaded images |
+| `/api/bookings` | POST | Validated, same-origin request saved as pending when enabled |
+| `/api/content` | GET | Public content or initial sample fallback |
+| `/api/admin` | GET / PUT | Admin-only request review and content updates |
+| `/api/photos` | POST | Admin-only upload to public Vercel Blob |
 
-`DB` and `BUCKET` are platform bindings, not strings to paste into `.env`. The binding names are declared in `.openai/hosting.json`. The starter configures local equivalents; Sites provisions hosted resources. No external API key is needed for this release. `.env.example` documents that fact; runtime variables belong in `.dev.vars` locally and the Site's runtime settings when hosted.
+The `bookings` table stores contact details, requested date/time, visit length, event type, location, notes, status, and creation time. The `content` table stores editable site content as JSON in one `site` row.
 
-## Data and request lifecycle
+A request is not a reservation. Marking it approved does not send an email, collect payment, prevent conflicting bookings, or add an event to the public timetable. Public appearances must be added separately. Deleting a request removes its database row.
 
-The `bookings` table stores contact information, requested timing, visit length, event type, location, notes, creation time, and status. The `content` table stores the current editable website content as JSON under a single `site` record. Uploaded photos live in R2; the content record references their image endpoints.
+### Data migration from the original Site
 
-1. A visitor submits `/api/bookings`; the server checks the input and saves a pending request.
-2. The visitor receives a request reference. This is not an availability guarantee or a confirmed reservation.
-3. An authorized administrator reviews it in `/manage` and contacts the guest separately.
-4. The administrator marks the request approved or declined. No message is automatically sent.
-5. A public calendar appearance is created separately when an event is open to visitors. Private requests never populate that calendar automatically.
-
-Deleting a booking removes its database record. Removing a gallery item removes its reference from the gallery; it does not currently delete the underlying uploaded object from R2. Keep this distinction in mind when designing a photo retention policy.
-
-### API map
-
-| Endpoint | Methods | Access / role |
-|---|---|---|
-| `/api/bookings` | `POST` | Same-origin form submission; validated and stored as pending |
-| `/api/content` | `GET` | Read published appearance and photo content |
-| `/api/admin` | `GET`, `PUT` | Authorized administrators only; mutations also require same-origin requests |
-| `/api/photos` | `POST` | Authorized same-origin image upload; JPG, PNG, or WebP, up to 8 MB |
-| `/api/photos/[id]` | `GET` | Read uploaded images; private Site access still applies while the Site is private |
-
-### Schema changes
-
-Edit `db/schema.ts`, run `pnpm db:generate`, inspect the generated SQL and Drizzle metadata, and commit them together. Build again and apply each new migration once to your local D1 database using the same command pattern as initial setup, with the new SQL filename. Do not rewrite previously applied migrations. Sites applies hosted migrations during publication; local changes do not modify the hosted database.
-
-## Before making the Site public
-
-The first deployment is owner-private. It uses the platform’s owner-only access boundary plus authenticated identity for the workshop (`ALLOW_PRIVATE_PREVIEW_ADMIN=true`). **Before changing the Site audience:**
-
-1. Set `ADMIN_USER_IDS` to the comma-separated Site-specific authenticated IDs for the intended administrators. IDs are available to signed-in users on `/manage` when they are not yet authorized.
-2. Remove `ALLOW_PRIVATE_PREVIEW_ADMIN` or set it to `false`, then redeploy while still private. Confirm management authorization works for an explicitly allowed account.
-3. Replace the sample schedule and imagery; confirm service area, timezone, pricing policy, public contact details, and privacy/retention details.
-4. Connect notifications if wanted, and add public-form abuse controls before accepting broad anonymous traffic.
-5. Verify the booking and management flows in a browser, then change sharing only when authorized.
-
-Do not enable the private-preview admin switch on a public Site. Signing in alone does not make someone an administrator when the switch is off.
-
-## GitHub and deployment workflow
-
-Clone this repository and use normal Git branches for development:
-
-```sh
-git switch -c feature/your-change
-# Edit the source, then check it.
-pnpm typecheck
-pnpm build
-git add .
-git commit -m "Describe the change"
-git push -u origin feature/your-change
-```
-
-Open a pull request to `main` when ready. There is no GitHub Actions deployment pipeline configured in this release.
-
-The hosted Site has its own versioned source repository. GitHub pushes do **not** automatically publish or synchronize that Site. To publish a local change through Sites, ask the Sites-enabled assistant to import the selected GitHub commit, preserve the project identity in `.openai/hosting.json`, run the build, synchronize the Site source, and deploy the resulting version. Likewise, ask for updated Site edits to be synchronized back to this GitHub repository.
-
-Do not overwrite `.openai/hosting.json` with another Site's identity. It contains identifiers and storage binding names, not credentials. Treat an independently hosted fork as a separate deployment project.
-
-### Deploying outside Sites
-
-The application is built for Cloudflare Workers with D1 and R2. A move to another platform requires adapting database/storage access, environment bindings, authentication, and build/deployment configuration. It is not a drop-in standard Next.js deployment: preserve the Vinext setup unless you deliberately migrate it. Hosted sign-in currently depends on Sites dispatch and will need an equivalent authenticated identity integration outside Sites.
+This is a runtime/source migration, not an automatic production-data transfer. Any bookings or saved content in the original D1 database, or photos in R2, remain there. The public sample image is included in Git and needs no migration. If real records or photos were added to the old Site, export and import them explicitly before switching live traffic. Legacy `/api/photos/<id>` URLs will need replacement with Blob URLs. The prior source remains available in Git history at commit `2fa2423`.
 
 ## Troubleshooting
 
-| Symptom | Check or action |
+| Problem | Action |
 |---|---|
-| `pnpm` or `corepack` is missing | Install the pinned pnpm version; see Local development. Verify Node meets the required version. |
-| `no such table: bookings` or `content` | Build once and run the initial local D1 migration command from the project root. |
-| `table already exists` when applying the initial SQL | The initial migration has already been applied to this local database; do not replay it. Apply only subsequent migrations. |
-| `/manage` says access denied locally | Copy `.dev.vars.example` to `.dev.vars`, restart the dev server, then use the local sign-in URL. |
-| Local sign-in does not work with `pnpm start` | The simulator runs in portable development mode. Use `pnpm dev` on `localhost`. |
-| Local sign-in does not work from a LAN address | The simulator intentionally accepts loopback access only. Open `localhost` on the development machine. |
-| The dev port is already in use | Stop the previous process, or run `pnpm dev -- --port 5174` and use the printed URL. |
-| Editing `lib/content.ts` does not update the page | Saved workshop content overrides the initial defaults. Edit it in the workshop instead. |
-| A replaced photo is not visible | Click Save changes after uploading, then refresh the visitor page. |
-| A booking is saved but no email arrives | Email and SMS notifications are not implemented in this version. Check `/manage`. |
-| A local install complains about managed Linux tools | Use `pnpm install --frozen-lockfile`, not `pnpm install:ci`. A clean clone defaults to the portable profile. |
-| A GitHub commit is not visible on the hosted website | Sites deployment is separate; use the publishing workflow above. |
+| Node 20 / missing `node:sqlite` | Run `nvm install` and `nvm use` from this folder; Node 24 is required |
+| `pnpm` not found after switching Node | Reinstall pnpm under that active Node version |
+| Port 3000 busy | Use `pnpm dev -- --port 3001` and the printed URL |
+| Database relation does not exist | Check `DATABASE_URL`, then run `pnpm db:migrate` |
+| Form says bookings open soon | Check the flag, Neon connection/schema, Clerk keys, and admin allowlist |
+| Sign-in succeeds but management is denied | Add the correct Clerk user ID to `ADMIN_USER_IDS` and redeploy/restart |
+| Old ChatGPT sign-in link fails | Use `/sign-in`; Sites authentication was removed |
+| Upload fails | Connect a public Blob store, check credentials, and choose a supported file below 3 MiB |
+| Editing initial content has no visible effect | Existing saved content overrides defaults; edit through the workshop |
+| Hosted changes are stale | Confirm the Vercel project tracks this repo/branch and the latest deployment succeeded |
+| No email arrives | Notifications are not implemented; review requests in the workshop |
 
-## Verification for this release
+## Verification and remaining checks
 
-TypeScript and the production build were checked. Validation checks cover malformed contact data, missing consent, invalid dates/times, overlong messages, unsafe image URLs, and reversed appearance times. Calendar checks cover a week spanning the new year. SQL migrations were inspected. Browser QA was unavailable in the authoring environment; visually review desktop and mobile and submit a test request before public launch.
+Run `pnpm test`, `pnpm typecheck`, and `pnpm build`. The migration is checked without production credentials so the first import can succeed before provisioning services. Local HTTP checks cover public rendering, unavailable-booking responses, and rejection of unauthorized management/upload requests, including forged legacy auth headers.
 
-### Manual review checklist
+Live Neon persistence, Clerk sign-in, Blob uploads, and the complete customer-to-admin flow must be verified once the real service connections are configured. No hosted service credentials or database records are included in this repository. No Vercel deployment is created by this code update.
 
-1. Check the home page on desktop and a narrow mobile viewport, including the mobile navigation.
-2. Move the calendar backward/forward and across a month boundary; verify sample labels and Pacific-time wording.
-3. Filter the gallery, open a photo, and close the dialog using its button and Escape.
-4. Submit a future-dated test request. Verify the pending receipt and the same request in `/manage`.
-5. Approve/decline the test request, refresh to verify persistence, then delete the test data.
-6. Edit an appearance and upload a photo; save, then refresh the visitor view.
-7. Test unauthorized management access before any public release.
+## Planned follow-up work
 
-## Next development milestones
-
-- Replace sample photography and appearances with Fred's approved content.
-- Finalize Fred's biography, service area, visit options, pricing process, and contact information.
-- Add request notifications and a customer confirmation workflow.
-- Add schedule conflict detection and travel buffers if instant booking becomes a requirement.
-- Complete public-form abuse controls, retention rules, and browser accessibility review.
-- Configure public sharing and a custom domain when the client is ready.
-
-These are planned follow-up tasks, not existing functionality.
-
-## Image provenance
-
-The built-in image-generation tool created the shared Santa sample. Brief: a friendly older Santa with a natural white beard, deep red velvet suit and glasses, seated beside a Christmas tree in a warm traditional workshop, holding a storybook; photorealistic editorial lighting, no text or logos. The result was optimized to WebP. Replace with Fred’s authorized photographs before promoting the site as his real photo gallery.
+- Connect the chosen services and verify request → database → workshop → status updates.
+- Replace sample content and finalize the client details.
+- Add email notifications, retention rules, and public-form abuse controls.
+- Add travel buffers and conflict prevention if instant booking is later required.
+- Complete browser/mobile/accessibility review and connect a custom domain.
