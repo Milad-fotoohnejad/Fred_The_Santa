@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { authConfigured, isAllowedAdmin, bookingsConfigured } from '../lib/config.ts';
+import { authConfigured, isAllowedAdmin, bookingsConfigured, blobConfigured } from '../lib/config.ts';
 import { bookingSchema, contentSchema } from '../lib/validation.ts';
 import { initialContent, monday, shiftDay } from '../lib/content.ts';
 import { photoType } from '../lib/photo-validation.ts';
 
 function withEnv(values, run) {
   const old = { ...process.env };
-  for (const key of ['DATABASE_URL','ADMIN_USER_IDS','NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY','CLERK_SECRET_KEY','BOOKINGS_ENABLED','ALLOW_PRIVATE_PREVIEW_ADMIN']) delete process.env[key];
+  for (const key of ['DATABASE_URL','ADMIN_USER_IDS','NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY','CLERK_SECRET_KEY','BOOKINGS_ENABLED','ALLOW_PRIVATE_PREVIEW_ADMIN','BLOB_READ_WRITE_TOKEN','BLOB_STORE_ID','VERCEL_OIDC_TOKEN']) delete process.env[key];
   Object.assign(process.env, values);
   try { run(); } finally { process.env = old; }
 }
@@ -33,6 +33,16 @@ test('booking launch requires database, Clerk, administrator, and an explicit fl
     const missing = { ...ready }; delete missing[key];
     withEnv(missing, () => assert.equal(bookingsConfigured(), false));
   }
+});
+test('connected Blob stores reach SDK authentication without an environment OIDC token', () => {
+  withEnv({ BLOB_STORE_ID: 'store_test' }, () => {
+    assert.equal(process.env.VERCEL_OIDC_TOKEN, undefined);
+    assert.equal(blobConfigured(), true);
+    assert.equal(isAllowedAdmin(null), false);
+  });
+  withEnv({ BLOB_READ_WRITE_TOKEN: 'test-token' }, () => assert.equal(blobConfigured(), true));
+  withEnv({}, () => assert.equal(blobConfigured(), false));
+  withEnv({ VERCEL_OIDC_TOKEN: 'test-token' }, () => assert.equal(blobConfigured(), false));
 });
 test('photo sources accept Blob HTTPS URLs and reject unsafe / obsolete sources', () => {
   assert(contentSchema.safeParse(initialContent).success);

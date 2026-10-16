@@ -12,5 +12,7 @@ export function bookingsConfigured() {
     authConfigured() && allowedAdminIds().length > 0;
 }
 export function blobConfigured() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN || (process.env.BLOB_STORE_ID && process.env.VERCEL_OIDC_TOKEN));
+  // The SDK resolves OIDC from Vercel's request context at runtime. The token
+  // need not exist in process.env; this is a configuration check, not auth.
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 }

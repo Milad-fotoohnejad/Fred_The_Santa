@@ -70,7 +70,7 @@ Signing in does **not** grant administration by itself. Every management read/wr
 
 Create a **public** Blob store and connect it to the project. A public store is appropriate for this public gallery; never upload confidential photos or booking records into it.
 
-The SDK supports a connected store's hosted OIDC credentials (`BLOB_STORE_ID` and `VERCEL_OIDC_TOKEN`) or `BLOB_READ_WRITE_TOKEN`. For ordinary local development, use the read/write token in `.env.local`.
+The SDK supports a connected store's `BLOB_STORE_ID` with hosted OIDC authentication, or `BLOB_READ_WRITE_TOKEN`. Vercel Functions provide OIDC through the request context; the token does not need to appear in environment-variable settings. Let the SDK retrieve it automatically. Keep the default `BLOB` variable prefix and redeploy after connecting the store. For ordinary local development, use the read/write token in `.env.local`.
 
 The management page accepts JPG, PNG, and WebP images up to **3 MiB**. This keeps the server upload below the Vercel Function request-body limit, including multipart overhead. Larger images should be resized before upload; direct browser uploads are not part of this release.
 
