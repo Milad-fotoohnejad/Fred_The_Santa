@@ -16,7 +16,7 @@ The website can build and deploy **without service credentials**. In this initia
 
 Database-backed requests, content editing, photo uploads, and administrator sign-in require the service connections described below. These external accounts/resources are not created by cloning or building this repository.
 
-Email/SMS notifications, payments, automatic availability, and conflict prevention are not implemented. Booking approval is a manual status change; Fred must arrange the visit with the guest separately.
+Fred controls available hours and private time blocks in the dashboard. Customer requests are checked against those hours, confirmed bookings, and public appearances. Approval reserves the time with transaction-protected overlap checks. Email/SMS notifications and payments are not implemented; admins must contact guests directly.
 
 ## Import into Vercel
 
@@ -78,7 +78,7 @@ Uploads are checked by file signature and saved with generated filenames. After 
 
 ### 4. Enable requests deliberately
 
-Once the database migration is applied, Clerk is configured, and at least one administrator is allowed:
+Once the database migration is applied, Clerk is configured, at least one administrator is allowed, Fred has saved available hours, and the scheduling flow has been tested:
 
 ```dotenv
 BOOKINGS_ENABLED=true
@@ -87,6 +87,34 @@ BOOKINGS_ENABLED=true
 Redeploy. The request form appears only when the flag and backend/admin configuration are present and the content database is readable. If the database cannot be read, the public page falls back to sample content and closes the form.
 
 Before enabling this flag for real customers, finalize Fred's contact details, service area, timezone, photos, public appearances, privacy/retention policy, and a process for reviewing requests. Add public-form rate limiting or bot protection appropriate to expected traffic; this release includes input validation and a honeypot, not a complete anti-abuse system.
+
+## Fred’s scheduling workflow
+
+1. Open **Santa’s workshop → Availability**. Select a date and add one or more available windows. No windows means the date is closed.
+2. Add **Blocked time** for travel, breaks, or personal commitments. Notes are admin-only. Save availability.
+3. **Copy day** copies that day’s hours and blocks to an empty target date; it never copies visits or public appearances. Save again after copying.
+4. Customers choose a date and a fixed visit length (30, 60, 90, or 120 minutes). Start choices are spaced 30 minutes apart, anchored to each window’s start; the entire visit must fit. Adjacent windows are separate—combine them to offer a visit spanning their boundary.
+5. Review requests, agree pricing/location/travel with the guest, and add travel blocks before approval. Pending requests may overlap; only one conflicting request can be approved.
+6. Use **Reschedule / set length** to change a pending or confirmed visit. Old “Let’s discuss” requests need a fixed length before approval. Confirmed rescheduling changes the reservation atomically. Use **Cancel visit** to release time without deleting the record.
+7. Public appearances outside bookable hours still reserve their times. Samples never reserve time. Changing availability does not cancel existing confirmed visits.
+
+All times use `America/Vancouver`, independent of browser/server timezone. Visits must finish on the same date. Nonexistent or ambiguous local times at a daylight-saving transition are rejected. There is no automatic travel buffer, external calendar sync, instant confirmation, or email delivery in this release.
+
+All scheduling writes use a request-scoped Neon WebSocket Pool transaction and the same transaction-level advisory lock (`68410327`). The lock is obtained before reading state under READ COMMITTED. This covers requests, approvals, reschedules, cancellations, availability updates, and public appearance edits. Availability revisions and booking versions reject stale admin edits. Do not add a new scheduling write path that bypasses this lock.
+
+The lock coordinates this application’s writers; direct SQL changes or older deployed code must not edit scheduling data concurrently. Database credentials must remain server-side. Public availability returns only date, duration, time choices, and timezone.
+
+### Scheduling acceptance check before opening bookings
+
+Use a separate preview database/Neon branch for tests. Configure two allowed test-admin sessions and enable `BOOKINGS_ENABLED` only in that test environment.
+
+- Open 10:00–14:00 on a future date and block 11:00–12:00. A one-hour request should offer 10:00, 12:00, 12:30, and 13:00.
+- Save, refresh the dashboard, and verify the hours and private note persist.
+- Submit two requests for 12:00. Approve them simultaneously from the two admin sessions: exactly one should succeed; the other must report a conflict.
+- Try moving a public appearance or block across the confirmed visit: save must fail. Try a stale availability save in a second tab: it must ask for a reload.
+- Reschedule the confirmed visit; the old time should reopen and the new one should close. Cancel it and confirm the time reopens.
+- Inspect `/api/availability?date=YYYY-MM-DD&duration=1%20hour`: no names, contact details, addresses, or block notes may appear. Anonymous `/api/schedule` must return 403.
+- Test on a phone and confirm no automatic email is promised. Remove test data before launch.
 
 ## Run locally
 
@@ -145,7 +173,7 @@ Only the Clerk publishable key and routing URLs are intentionally public. Keep c
 - Initial content is in `lib/content.ts`; saved workshop content overrides those defaults.
 - One AI-generated generic Santa photo is reused at `public/images/santa-placeholder.webp`. It is not a photograph of Fred.
 - The main portrait is shared by the hero and Meet Fred sections. Gallery entries can be replaced individually.
-- Public sample appearances are December 18–20, 2026 and are marked Sample. They are not real events.
+- Sample appearances stay in the admin editor but are hidden from the public calendar and do not block bookings. Uncheck Sample only for confirmed public events.
 - Times use `America/Vancouver` (Pacific) provisionally. Change `TIMEZONE` and the visible Pacific labels together if Fred operates elsewhere.
 - Image paths are restricted to local `/images/` files or HTTPS public Vercel Blob URLs.
 
@@ -155,7 +183,9 @@ Only the Clerk publishable key and routing URLs are intentionally public. Keep c
 |---|---|
 | `app/components/Home.tsx` | Public design, calendar, gallery |
 | `app/components/BookingForm.tsx` | Closed/open booking state and request receipt |
-| `app/components/Workshop.tsx` | Request, appearance, and photo management |
+| `app/components/Workshop.tsx` | Request review, rescheduling/cancellation, appearances, and photos |
+| `app/components/AvailabilityEditor.tsx` | Daily available windows, private blocks, copy day, and private agenda |
+| `lib/scheduling.ts`, `lib/schedule-store.ts` | Pacific time rules, slot calculations, and transaction-protected scheduling |
 | `app/manage`, `app/sign-in` | Admin sign-in and access-controlled UI |
 | `proxy.ts` | Clerk session integration for Next.js |
 | `lib/config.ts`, `lib/server.ts` | Configuration, allowlist checks, and content access |
@@ -169,10 +199,12 @@ Only the Clerk publishable key and routing URLs are intentionally public. Keep c
 | `/api/content` | GET | Public content or initial sample fallback |
 | `/api/admin` | GET / PUT | Admin-only request review and content updates |
 | `/api/photos` | POST | Admin-only upload to public Vercel Blob |
+| `/api/availability` | GET | Public time choices for a date and visit length; no private details |
+| `/api/schedule` | GET / PUT | Admin-only availability, private agenda, and revision-checked updates |
 
-The `bookings` table stores contact details, requested date/time, visit length, event type, location, notes, status, and creation time. The `content` table stores editable site content as JSON in one `site` row.
+The `bookings` table stores contact details, requested date/time, visit length, event type, location, notes, status, and creation time. The `content` table stores site content in the `site` JSON row and availability in a separate `schedule` JSON row. This scheduling release needs **no new migration** after the original tables exist. The cancelled status is a text value, not a database enum change.
 
-A request is not a reservation. Marking it approved does not send an email, collect payment, prevent conflicting bookings, or add an event to the public timetable. Public appearances must be added separately. Deleting a request removes its database row.
+A pending request is not a reservation. Approval reserves its time and rejects overlaps. It does not send email, collect payment, or publish private details on the public timetable. Public appearances are added separately and also block availability. Cancelling or declining releases the reservation but keeps its record; deleting removes the row.
 
 ### Data migration from the original Site
 
@@ -198,12 +230,12 @@ This is a runtime/source migration, not an automatic production-data transfer. A
 
 Run `pnpm test`, `pnpm typecheck`, and `pnpm build`. The migration is checked without production credentials so the first import can succeed before provisioning services. Local HTTP checks cover public rendering, unavailable-booking responses, and rejection of unauthorized management/upload requests, including forged legacy auth headers.
 
-Live Neon persistence, Clerk sign-in, Blob uploads, and the complete customer-to-admin flow must be verified once the real service connections are configured. No hosted service credentials or database records are included in this repository. No Vercel deployment is created by this code update.
+Live Neon persistence, Clerk sign-in, Blob uploads, and the complete customer-to-admin flow must be verified once the real service connections are configured. No hosted service credentials or database records are included in this repository. Vercel deploys committed changes through its Git integration. Automated tests do not substitute for a signed-in live booking/approval check.
 
 ## Planned follow-up work
 
 - Connect the chosen services and verify request → database → workshop → status updates.
 - Replace sample content and finalize the client details.
 - Add email notifications, retention rules, and public-form abuse controls.
-- Add travel buffers and conflict prevention if instant booking is later required.
+- Add automatic email delivery and reminders after the scheduling flow is verified with Fred.
 - Complete browser/mobile/accessibility review and connect a custom domain.
