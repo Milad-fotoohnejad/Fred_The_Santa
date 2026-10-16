@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { auth } from '@clerk/nextjs/server';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
@@ -28,3 +29,5 @@ export function sameOrigin(request: Request) {
 export function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
+
+export function contentRevision(site: SiteContent) { return createHash('sha256').update(JSON.stringify(site)).digest('hex'); }

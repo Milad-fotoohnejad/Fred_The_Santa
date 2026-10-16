@@ -100,7 +100,7 @@ Before enabling this flag for real customers, finalize Fred's contact details, s
 
 All times use `America/Vancouver`, independent of browser/server timezone. Visits must finish on the same date. Nonexistent or ambiguous local times at a daylight-saving transition are rejected. There is no automatic travel buffer, external calendar sync, instant confirmation, or email delivery in this release.
 
-All scheduling writes use a request-scoped Neon WebSocket Pool transaction and the same transaction-level advisory lock (`68410327`). The lock is obtained before reading state under READ COMMITTED. This covers requests, approvals, reschedules, cancellations, availability updates, and public appearance edits. Availability revisions and booking versions reject stale admin edits. Do not add a new scheduling write path that bypasses this lock.
+All scheduling writes use a request-scoped Neon WebSocket Pool transaction and the same transaction-level advisory lock (`68410327`). The lock is obtained before reading state under READ COMMITTED. This covers requests, approvals, reschedules, cancellations, availability updates, and public appearance edits. Availability revisions, site-content hashes, and booking versions reject stale admin edits. Photo edits cannot silently overwrite another admin’s updated appearances. Do not add a new scheduling write path that bypasses this lock.
 
 The lock coordinates this application’s writers; direct SQL changes or older deployed code must not edit scheduling data concurrently. Database credentials must remain server-side. Public availability returns only date, duration, time choices, and timezone.
 

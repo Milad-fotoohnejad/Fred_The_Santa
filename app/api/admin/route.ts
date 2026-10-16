@@ -2,7 +2,7 @@ import { desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/db';
 import { bookings } from '@/db/schema';
-import { isAdmin, json, readContent, sameOrigin } from '@/lib/server';
+import { isAdmin, json, readContent, sameOrigin, contentRevision } from '@/lib/server';
 import { contentSchema } from '@/lib/validation';
 import { withDiary, saveContent } from '@/lib/schedule-store';
 import { canRequest, validateSchedule, ScheduleError, scheduleDate, scheduleTime, VISIT_LENGTHS } from '@/lib/scheduling';
@@ -10,7 +10,7 @@ export const runtime='nodejs';
 export async function GET() {
  if(!await isAdmin())return json({error:'Access denied.'},403);
  if(!process.env.DATABASE_URL)return json({error:'Connect Neon and run the database migration before opening the workshop.'},503);
- try{const [requests,site]=await Promise.all([getDb().select().from(bookings).orderBy(desc(bookings.createdAt)),readContent()]);return json({requests,site});}
+ try{const [requests,site]=await Promise.all([getDb().select().from(bookings).orderBy(desc(bookings.createdAt)),readContent()]);return json({requests,site,siteVersion:contentRevision(site)});}
  catch{return json({error:'The workshop database is unavailable. Check its connection and migrations.'},503);}
 }
 const changeSchema=z.object({date:scheduleDate,time:scheduleTime,duration:z.enum(VISIT_LENGTHS)});
@@ -36,10 +36,11 @@ export async function PUT(request:Request) {
    if(body.status==='approved'&&booking.status!=='approved'&&!canRequest(booking.date,booking.time,booking.duration,diary.schedule,diary.bookings.filter(b=>b.id!==booking.id),diary.site.appearances))throw new ScheduleError('This request is outside available hours, in the past, or overlaps a commitment. Set availability or reschedule it before approving.');
    await client.query('UPDATE bookings SET status=$1 WHERE id=$2',[body.status,booking.id]);return json({ok:true});
   }
+  if(body.siteVersion!==contentRevision(diary.site))return json({error:'Website content changed in another session. Refresh the workshop before saving.'},409);
   const parsed=contentSchema.safeParse(body.site);if(!parsed.success)return json({error:parsed.error.issues[0]?.message||'Check the content fields.'},400);
   // Even public-appearance edits use the booking lock, so a calendar edit
   // cannot race with an approval and leave Fred double booked.
   if(JSON.stringify(parsed.data.appearances)!==JSON.stringify(diary.site.appearances))validateSchedule(diary.schedule,diary.bookings,parsed.data.appearances);
-  await saveContent(client,'site',parsed.data);return json({ok:true});
+  await saveContent(client,'site',parsed.data);return json({ok:true,siteVersion:contentRevision(parsed.data)});
  });}catch(e){return json({error:e instanceof ScheduleError?e.message:'Changes could not be saved. Please refresh and try again.'},e instanceof ScheduleError?e.status:503);}
 }
