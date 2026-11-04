@@ -54,7 +54,7 @@ test('photo sources accept Blob HTTPS URLs and reject unsafe / obsolete sources'
 test('booking input validates consent, email, calendar dates, and bot trap', () => {
   const valid={name:'Test Guest',email:'guest@example.com',phone:'6045550100',date:'2026-12-20',time:'15:30',duration:'1 hour',eventType:'Home visit',location:'Test venue',notes:'',consent:true};
   assert(bookingSchema.safeParse(valid).success);
-  for (const change of [{email:'invalid'},{consent:false},{date:'2026-02-30'},{time:'25:00'},{website:'bot'}]) assert.equal(bookingSchema.safeParse({...valid,...change}).success,false);
+  for (const change of [{email:'invalid'},{consent:false},{date:'2026-02-30'},{time:'25:00'},{duration:'Let’s discuss'},{website:'bot'}]) assert.equal(bookingSchema.safeParse({...valid,...change}).success,false);
 });
 test('upload identifies supported signatures and rejects SVG and random data', () => {
   assert.equal(photoType(new Uint8Array([255,216,255,0]))?.extension, 'jpg');

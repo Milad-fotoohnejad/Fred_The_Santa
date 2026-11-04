@@ -5,3 +5,10 @@ strictDepBuilds: true
 allowBuilds:
   esbuild: true
   sharp: true
+
+# Patched transitive versions; remove when upstream pins catch up.
+overrides:
+  'browserslist@<4.28.7': 4.28.7
+  'baseline-browser-mapping@<2.11.0': 2.11.0
+  '@vercel/cli-config>zod': 4.6.7
+  '@esbuild-kit/core-utils>esbuild': 0.25.12

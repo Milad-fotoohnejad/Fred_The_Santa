@@ -62,6 +62,16 @@ ADMIN_USER_IDS=user_your_clerk_user_id
 
 Create or invite the intended administrator in Clerk. Obtain the user's `user_...` ID from the Clerk dashboard, or sign in and visit `/manage`: unauthorized signed-in users see their own ID. Add Fred's and/or your IDs to `ADMIN_USER_IDS`, separated by commas, and redeploy after changing hosted environment variables.
 
+#### Add Fred or Danica as an administrator
+
+1. In the Clerk application connected to this website, use **Invitations** to invite the person, or have them use the website's existing sign-up flow. Do not invite them to the Clerk workspace/team just to manage the website.
+2. Once they have signed up, copy their exact `user_...` ID from **Users**, or have them visit `/manage` and copy the ID shown under **Access required**. An email address is not an admin ID.
+3. In Vercel, open this project → **Settings → Environment Variables → ADMIN_USER_IDS**. Keep every existing authorized ID and append the new one, separated by a comma. If the current value is a write-only Secret, reconstruct the complete list from the intended users in Clerk before replacing it.
+4. Apply the list to **Production**. Include **Preview** only for administrators who need the test environment. Save and redeploy the relevant environment.
+5. Ask the person to reopen `/manage`. They should see **Requests**, **Availability**, **Appearances**, and **Photos**.
+
+Example format only: `user_milad_actual_id,user_fred_actual_id,user_danica_actual_id`. Replace these placeholders with the actual Clerk IDs. Keep the list limited to the intended three administrators. Development and Production Clerk instances have separate users and IDs; use the instance connected to the deployment.
+
 Use the Clerk instance and domain configuration appropriate to the deployment; use production keys for the final public production app. Do not paste secret keys into chat, source code, or `NEXT_PUBLIC_` variables.
 
 Signing in does **not** grant administration by itself. Every management read/write and upload checks the allowlist server-side. No ChatGPT authentication headers are trusted, and the old `ALLOW_PRIVATE_PREVIEW_ADMIN` switch is no longer supported. Local development uses Clerk too; there is no mock-admin bypass.
@@ -239,3 +249,16 @@ Live Neon persistence, Clerk sign-in, Blob uploads, and the complete customer-to
 - Add email notifications, retention rules, and public-form abuse controls.
 - Add automatic email delivery and reminders after the scheduling flow is verified with Fred.
 - Complete browser/mobile/accessibility review and connect a custom domain.
+
+
+## Booking readiness review — 2026-11-04
+
+- Updated Next.js to 16.4.3, Clerk to 7.9.22, Zod to 4.6.7, Blob to 2.8.2, and Drizzle Kit to 0.31.11. The lockfile includes patched supporting dependencies and retains the seven-day package-release policy.
+- `pnpm audit`: zero reported advisories at review time. This is a point-in-time dependency check, not a guarantee of application security.
+- `pnpm peers check`: no peer dependency issues. `pnpm test`: 22 passing tests. TypeScript and the production build passed under Node 24.
+- Booking validation now rejects the obsolete “Let’s discuss” duration at input validation; visitors must choose a supported fixed length.
+- Live Production availability returned HTTP 200 with the expected public-only response. An invalid calendar date returned 400. Anonymous admin and schedule requests returned 403. These verify database reads and access denial, not authenticated database writes.
+- No live booking was submitted, approved, rescheduled, or cancelled in this review. Fred still needs to perform the acceptance check above. No database migration or data reset is needed for this update.
+- The connected Vercel API refused permission to set the Production booking flag. An authorized project owner must set `BOOKINGS_ENABLED=true` for **Production**, save, and redeploy. Preview's branch-specific flag does not enable Production.
+- Available hours must be saved in the dashboard before any dates offer bookable times. Keep unavailable days closed; do not add arbitrary hours just to make the form look active.
+- Automatic email/SMS, payments, external calendar sync, and full bot/rate-limit protection are not implemented. Admins must monitor Requests and contact guests themselves. The observed hosted Clerk sign-in uses a development instance; configure a production Clerk instance for the final public release and update the admin IDs to match that instance.

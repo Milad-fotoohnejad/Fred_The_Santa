@@ -3,7 +3,7 @@ export const dateSchema=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{const
 const timeSchema=z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 export const bookingSchema=z.object({
  name:z.string().trim().min(2).max(100),email:z.string().trim().email().max(200),phone:z.string().trim().min(7).max(40),
- date:dateSchema,time:timeSchema,duration:z.enum(['30 minutes','1 hour','90 minutes','2 hours','Let’s discuss']),
+ date:dateSchema,time:timeSchema,duration:z.enum(['30 minutes','1 hour','90 minutes','2 hours']),
  eventType:z.enum(['Home visit','Holiday party','Community event','Photo session']),location:z.string().trim().min(3).max(300),notes:z.string().trim().max(2000).default(''),consent:z.literal(true),website:z.string().max(0).optional(),
 });
 const imagePath=z.string().refine(value => {
