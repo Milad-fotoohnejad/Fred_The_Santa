@@ -1,4 +1,4 @@
-# Fred the Santa
+# Santa Fred
 
 A Christmas website for Fred Berg, built with **standard Next.js App Router, React, and TypeScript**, ready to import into Vercel using the **Next.js preset**.
 
