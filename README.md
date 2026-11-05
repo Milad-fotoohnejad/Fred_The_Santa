@@ -183,7 +183,7 @@ Only the Clerk publishable key and routing URLs are intentionally public. Keep c
 - Initial content is in `lib/content.ts`; saved workshop content overrides those defaults.
 - One AI-generated generic Santa photo is reused at `public/images/santa-placeholder.webp`. It is not a photograph of Fred.
 - The main portrait is shared by the hero and Meet Fred sections. Gallery entries can be replaced individually.
-- Sample appearances stay in the admin editor but are hidden from the public calendar and do not block bookings. Uncheck Sample only for confirmed public events.
+- New appearances are public when saved and reserve their time. Earlier sample entries remain hidden and do not block bookings.
 - Times use `America/Vancouver` (Pacific) provisionally. Change `TIMEZONE` and the visible Pacific labels together if Fred operates elsewhere.
 - Image paths are restricted to local `/images/` files or HTTPS public Vercel Blob URLs.
 
